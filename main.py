@@ -49,7 +49,7 @@ def get_db():
 @app.post("/search",dependencies=[Depends(validate_token)])
 def search_item(text: str, db: Session = Depends(get_db)):
     # Generate vector from input text
-    vector = create_vector(text)
+    vector = create_vector(text[:100])
     
     # Search for the closest vector in the items table
     try:
