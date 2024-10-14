@@ -77,3 +77,7 @@ def search_item(text: str, db: Session = Depends(get_db)):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error searching for item: {e}")
+
+@app.get("/ping")
+def ping():
+    return {"message": "API is up and running!"}
