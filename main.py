@@ -1,5 +1,5 @@
 import openai
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Header
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from models import GPCLevel, Items, SessionLocal  # Import your SQLAlchemy models and session
@@ -13,11 +13,20 @@ load_dotenv()
 # Initialize FastAPI app
 app = FastAPI()
 
+API_AUTH_TOKEN = os.getenv("API_AUTH_TOKEN")
+
+# Dependency that checks for the correct token
+def verify_token(authorization: str = Header(None)):
+    if authorization != f"Bearer {API_AUTH_TOKEN}":
+        raise HTTPException(
+            status_code=401, detail="Invalid or missing token"
+        )
+
 # Initialize OpenAI API client
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Function to generate vector from input text using OpenAI
-def create_vector(text: str):
+def create_vector(text: str, token: str = Depends(verify_token)):
     try:
         response = client.embeddings.create(
             input=text,
