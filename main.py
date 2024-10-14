@@ -11,15 +11,16 @@ import numpy as np
 
 load_dotenv()
 
+bearer_scheme = HTTPBearer()
 API_AUTH_TOKEN = os.getenv("API_AUTH_TOKEN")
+assert API_AUTH_TOKEN is not None
 
-# Dependency that checks for the correct token
-def verify_token(authorization: str = Header(None)):
-    if authorization != f"Bearer {API_AUTH_TOKEN}":
-        raise HTTPException(
-            status_code=401, detail="Invalid or missing token"
-        )
-app = FastAPI()
+def validate_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
+    if credentials.scheme != "Bearer" or credentials.credentials != API_AUTH_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid or missing token")
+    return credentials
+
+app = FastAPI(dependencies=[Depends(validate_token)])
 
 # Initialize OpenAI API client
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -45,8 +46,8 @@ def get_db():
         db.close()
 
 # Endpoint to search for closest vector match and return corresponding GPCLevel row
-@app.post("/search")
-def search_item(text: str, db: Session = Depends(get_db), token: str = Depends(verify_token)):
+@app.post("/search",dependencies=[Depends(validate_token)])
+def search_item(text: str, db: Session = Depends(get_db)):
     # Generate vector from input text
     vector = create_vector(text)
     
