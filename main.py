@@ -1,5 +1,6 @@
 import openai
 from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from models import GPCLevel, Items, SessionLocal  # Import your SQLAlchemy models and session
@@ -10,23 +11,22 @@ import numpy as np
 
 load_dotenv()
 
-# Initialize FastAPI app
-app = FastAPI()
-
+bearer_scheme = HTTPBearer()
 API_AUTH_TOKEN = os.getenv("API_AUTH_TOKEN")
+assert API_AUTH_TOKEN is not None
 
-# Dependency that checks for the correct token
-def verify_token(authorization: str = Header(None)):
-    if authorization != f"Bearer {API_AUTH_TOKEN}":
-        raise HTTPException(
-            status_code=401, detail="Invalid or missing token"
-        )
+def validate_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
+    if credentials.scheme != "Bearer" or credentials.credentials != API_AUTH_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid or missing token")
+    return credentials
+
+app = FastAPI(dependencies=[Depends(validate_token)])
 
 # Initialize OpenAI API client
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Function to generate vector from input text using OpenAI
-def create_vector(text: str, token: str = Depends(verify_token)):
+def create_vector(text: str):
     try:
         response = client.embeddings.create(
             input=text,
@@ -46,7 +46,7 @@ def get_db():
         db.close()
 
 # Endpoint to search for closest vector match and return corresponding GPCLevel row
-@app.post("/search")
+@app.post("/search",dependencies=[Depends(validate_token)])
 def search_item(text: str, db: Session = Depends(get_db)):
     # Generate vector from input text
     vector = create_vector(text)
