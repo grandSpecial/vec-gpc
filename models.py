@@ -36,6 +36,10 @@ class Items(Base):
 
 # Database connection details
 DATABASE_URL = os.getenv('DATABASE_URL')
+# SQLalchemy only accepts urls like "postgresql://"
+# but heroku will not provide so we have to make it ourselves
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = database_url.replace("postgres://", "postgresql://", 1)
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
