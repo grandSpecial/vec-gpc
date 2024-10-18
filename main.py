@@ -84,7 +84,6 @@ def get_db():
 def search_item(text: str, db: Session = Depends(get_db)):
     response = create_description(text)
     description = response.choices[0].message.content
-    print(description)
     # Generate vector from input text
     vector = create_vector(description)
     
@@ -108,6 +107,7 @@ def search_item(text: str, db: Session = Depends(get_db)):
             "code": gpc_item.code,
             "title": gpc_item.title,
             "full_title": gpc_item.full_title,
+            "description": description,
             "definition": gpc_item.definition,
             "active": gpc_item.active
         }
