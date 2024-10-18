@@ -37,6 +37,40 @@ def create_vector(text: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating vector: {e}")
 
+def create_description(text):
+    response = client.chat.completions.create(
+      model="gpt-4o",
+      messages=[
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "text",
+              "text": "You take a short item description and describe it in more detail for use in performing semantic search. You return a single sentence. "
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": text
+            }
+          ]
+        },
+      ],
+      temperature=1,
+      max_tokens=2048,
+      top_p=1,
+      frequency_penalty=0,
+      presence_penalty=0,
+      response_format={
+        "type": "text"
+      }
+    )
+    return response
+
 # Dependency to get a database session
 def get_db():
     db = SessionLocal()
@@ -48,8 +82,11 @@ def get_db():
 # Endpoint to search for closest vector match and return corresponding GPCLevel row
 @app.post("/search",dependencies=[Depends(validate_token)])
 def search_item(text: str, db: Session = Depends(get_db)):
+    response = create_description(text)
+    description = response.choices[0].message.content
+    print(description)
     # Generate vector from input text
-    vector = create_vector(text[:100])
+    vector = create_vector(description)
     
     # Search for the closest vector in the items table
     try:
