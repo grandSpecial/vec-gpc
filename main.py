@@ -79,6 +79,29 @@ def get_db():
     finally:
         db.close()
 
+def get_level_3_category(gpc_item, db):
+    """Get the Level 3 category for any GPC item by traversing up the hierarchy"""
+    
+    # If this item is already Level 3, return its category
+    if gpc_item.level == 3:
+        return gpc_item.level_3_category
+    
+    # If this item is Level 4 or 5, find its Level 3 parent
+    current_item = gpc_item
+    while current_item and current_item.level > 3:
+        current_item = db.query(GPCLevel).filter_by(id=current_item.parent_id).first()
+    
+    # If we found a Level 3 parent, return its category
+    if current_item and current_item.level == 3:
+        return current_item.level_3_category
+    
+    # Fallback: extract from full_title
+    title_parts = gpc_item.full_title.split(" > ")
+    if len(title_parts) >= 3:
+        return title_parts[2].strip()  # Level 3 title
+    
+    return gpc_item.title  # Final fallback
+
 # Endpoint to search for closest vector match and return corresponding GPCLevel row
 @app.post("/search",dependencies=[Depends(validate_token)])
 def search_item(text: str, db: Session = Depends(get_db)):
@@ -102,11 +125,15 @@ def search_item(text: str, db: Session = Depends(get_db)):
         if gpc_item is None:
             raise HTTPException(status_code=404, detail="GPCLevel item not found")
 
+        # Get the Level 3 category
+        level_3_category = get_level_3_category(gpc_item, db)
+
         return {
             "id": gpc_item.id,
             "code": gpc_item.code,
             "title": gpc_item.title,
             "full_title": gpc_item.full_title,
+            "level_3_category": level_3_category,  # Updated field name
             "description": description,
             "definition": gpc_item.definition,
             "active": gpc_item.active
