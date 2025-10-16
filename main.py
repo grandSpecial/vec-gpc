@@ -102,6 +102,27 @@ def get_level_3_category(gpc_item, db):
     
     return gpc_item.title  # Final fallback
 
+def get_level_2_category(gpc_item, db):
+    """Get the Level 2 category for any GPC item by traversing up the hierarchy"""
+    # If already Level 2
+    if gpc_item.level == 2:
+        return getattr(gpc_item, "level_2_category", None) or gpc_item.title
+
+    # Traverse up until level 2
+    current_item = gpc_item
+    while current_item and current_item.level > 2:
+        current_item = db.query(GPCLevel).filter_by(id=current_item.parent_id).first()
+
+    if current_item and current_item.level == 2:
+        return getattr(current_item, "level_2_category", None) or current_item.title
+
+    # Fallback from full_title
+    title_parts = gpc_item.full_title.split(" > ")
+    if len(title_parts) >= 2:
+        return title_parts[1].strip()
+
+    return gpc_item.title
+
 # Endpoint to search for closest vector match and return corresponding GPCLevel row
 @app.post("/search",dependencies=[Depends(validate_token)])
 def search_item(text: str, db: Session = Depends(get_db)):
@@ -127,12 +148,15 @@ def search_item(text: str, db: Session = Depends(get_db)):
 
         # Get the Level 3 category
         level_3_category = get_level_3_category(gpc_item, db)
+        # Get the Level 2 category
+        level_2_category = get_level_2_category(gpc_item, db)
 
         return {
             "id": gpc_item.id,
             "code": gpc_item.code,
             "title": gpc_item.title,
             "full_title": gpc_item.full_title,
+            "level_2_category": level_2_category,
             "level_3_category": level_3_category,  # Updated field name
             "description": description,
             "definition": gpc_item.definition,

@@ -24,7 +24,8 @@ class GPCLevel(Base):
     definition_excludes = Column(Text)
     active = Column(Boolean)
     parent_id = Column(Integer, ForeignKey('gpc_level.id'))
-    level_3_category = Column(String, index=True)  # Updated field name for Level 3 categories
+    level_3_category = Column(String, index=True)
+    level_2_category = Column(String, index=True)
     
     # Relationship for self-referencing hierarchy
     parent = relationship('GPCLevel', remote_side=[id], backref='children')
