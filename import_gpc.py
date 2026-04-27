@@ -5,6 +5,7 @@ from tqdm import tqdm
 from sqlalchemy.dialects.postgresql import insert  # For bulk insertions
 from models import GPCLevel, Items, SessionLocal, engine
 from models import Model  # Import the Pydantic model
+from embedding_text import build_gpc_embedding_text
 import os  
 from dotenv import load_dotenv
 load_dotenv()
@@ -24,19 +25,17 @@ def create_vector(text):
     return response.data[0].embedding
 
 # Function to insert/update the items table with vectors
-def insert_item_with_vector(session, gpc_item_id, full_title):
-    # Check if the vector for the item already exists
-    existing_vector = session.query(Items).filter_by(id=gpc_item_id).first()
-    
-    # If the vector already exists, skip the insertion
-    if existing_vector:
-        return
-        
-    # Create the vector based on the full_title
-    vector = create_vector(full_title)
-    
-    # Insert the vector into the items table, referencing the id from gpc_level
-    session.execute(insert(Items).values(id=gpc_item_id, vector=vector).on_conflict_do_nothing())
+def upsert_item_vector(session, gpc_item_id, embedding_text):
+    vector = create_vector(embedding_text)
+
+    session.execute(
+        insert(Items)
+        .values(id=gpc_item_id, vector=vector)
+        .on_conflict_do_update(
+            index_elements=[Items.id],
+            set_={"vector": vector}
+        )
+    )
     session.commit()
 
 # Function to update the full_title field and vector for each row
@@ -71,8 +70,10 @@ def update_gpc_item(session, item, level, parent_id=None, parent_titles=""):
         session.flush()  # Get the ID of the inserted item
         gpc_item_id = new_item.id
 
+    embedding_text = build_gpc_embedding_text(item.Title, full_title, item.Definition)
+
     # Generate vector and insert/update the items table
-    insert_item_with_vector(session, gpc_item_id, full_title)
+    upsert_item_vector(session, gpc_item_id, embedding_text)
 
     # Update the child items recursively
     for child in tqdm(item.Childs, desc=f"Processing children of {item.Title}", leave=False):

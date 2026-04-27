@@ -1,12 +1,11 @@
 import openai
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from models import GPCLevel, Items, SessionLocal  # Import your SQLAlchemy models and session
 import os
 from dotenv import load_dotenv
-from pgvector.sqlalchemy import Vector
 import numpy as np
 
 load_dotenv()
@@ -46,7 +45,18 @@ def create_description(text):
           "content": [
             {
               "type": "text",
-              "text": "You take a short item description and describe it in more detail for use in performing semantic search. You return a single sentence. "
+              "text": """
+                You take a short, often abbreviated item description and rewrite it as one short sentence that describes only
+                the product itself for semantic classification.
+
+                Focus on intrinsic attributes such as what the item is, its physical form, material, and composition.
+                Do not mention what it is used with, what it holds, what it is served with, accessories, pairings, recipes,
+                occasions, or nearby products in the same meal.
+                If the item name mentions another product only as a serving style, filling, companion food, or intended use,
+                omit that related product and keep the sentence centered on the purchased item itself.
+                Do not add brand context or speculative details.
+                Return a single plain sentence.
+              """,
             }
           ]
         },
@@ -60,8 +70,8 @@ def create_description(text):
           ]
         },
       ],
-      temperature=1,
-      max_tokens=2048,
+      temperature=0,
+      max_tokens=128,
       top_p=1,
       frequency_penalty=0,
       presence_penalty=0,
@@ -127,20 +137,18 @@ def get_level_2_category(gpc_item, db):
 @app.post("/search",dependencies=[Depends(validate_token)])
 def search_item(text: str, db: Session = Depends(get_db)):
     response = create_description(text)
-    description = response.choices[0].message.content
-    # Generate vector from input text
+    description = response.choices[0].message.content.strip()
     vector = create_vector(description)
     
     # Search for the closest vector in the items table
     try:
         closest_item = db.execute(
-            select(Items).order_by(Items.vector.l2_distance(vector)).limit(1)
+            select(Items).order_by(Items.vector.cosine_distance(vector)).limit(1)
         ).scalar_one_or_none()
 
         if closest_item is None:
             raise HTTPException(status_code=404, detail="No matching item found")
-        
-        # Lookup corresponding GPCLevel row by id
+
         gpc_item = db.query(GPCLevel).filter_by(id=closest_item.id).first()
 
         if gpc_item is None:
@@ -163,5 +171,7 @@ def search_item(text: str, db: Session = Depends(get_db)):
             "active": gpc_item.active
         }
     
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error searching for item: {e}")
