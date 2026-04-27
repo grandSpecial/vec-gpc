@@ -3,12 +3,14 @@ from openai import OpenAI
 from sqlalchemy import text
 from tqdm import tqdm
 from sqlalchemy.dialects.postgresql import insert  # For bulk insertions
-from models import GPCLevel, Items, SessionLocal, engine
+from models import GPCLevel, Items, SessionLocal, engine, EmbeddingRefreshState
 from models import Model  # Import the Pydantic model
 from embedding_text import build_gpc_embedding_text
 import os  
 from dotenv import load_dotenv
 load_dotenv()
+
+EMBEDDING_VERSION = "gpc-embedding-v1"
 
 # Create the database tables if they don't already exist
 GPCLevel.metadata.create_all(bind=engine)
@@ -36,6 +38,23 @@ def upsert_item_vector(session, gpc_item_id, embedding_text):
             set_={"vector": vector}
         )
     )
+    session.commit()
+
+def is_embedding_current(session, gpc_item_id):
+    refresh_state = session.query(EmbeddingRefreshState).filter_by(gpc_item_id=gpc_item_id).first()
+    return refresh_state is not None and refresh_state.embedding_version == EMBEDDING_VERSION
+
+def mark_embedding_current(session, gpc_item_id):
+    refresh_state = session.query(EmbeddingRefreshState).filter_by(gpc_item_id=gpc_item_id).first()
+    if refresh_state:
+        refresh_state.embedding_version = EMBEDDING_VERSION
+    else:
+        session.add(
+            EmbeddingRefreshState(
+                gpc_item_id=gpc_item_id,
+                embedding_version=EMBEDDING_VERSION
+            )
+        )
     session.commit()
 
 # Function to update the full_title field and vector for each row
@@ -72,8 +91,10 @@ def update_gpc_item(session, item, level, parent_id=None, parent_titles=""):
 
     embedding_text = build_gpc_embedding_text(item.Title, full_title, item.Definition)
 
-    # Generate vector and insert/update the items table
-    upsert_item_vector(session, gpc_item_id, embedding_text)
+    # Only refresh vectors that have not been updated for the current embedding version.
+    if not is_embedding_current(session, gpc_item_id):
+        upsert_item_vector(session, gpc_item_id, embedding_text)
+        mark_embedding_current(session, gpc_item_id)
 
     # Update the child items recursively
     for child in tqdm(item.Childs, desc=f"Processing children of {item.Title}", leave=False):

@@ -80,6 +80,13 @@ class ClassificationCandidate(Base):
 
     classification_log = relationship("ClassificationLog", back_populates="candidates")
 
+class EmbeddingRefreshState(Base):
+    __tablename__ = "embedding_refresh_state"
+
+    gpc_item_id = Column(Integer, ForeignKey("gpc_level.id"), primary_key=True)
+    embedding_version = Column(String, nullable=False, index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
 # Database connection details
 DATABASE_URL = os.getenv('DATABASE_URL')
 # SQLalchemy only accepts urls like "postgresql://"
