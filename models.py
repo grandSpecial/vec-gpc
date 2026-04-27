@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, Text, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, Text, ForeignKey, DateTime, Float
 from sqlalchemy.orm import relationship, sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from pgvector.sqlalchemy import Vector
@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 import os  
 from dotenv import load_dotenv
+from sqlalchemy.sql import func
 load_dotenv()
 
 # SQLAlchemy Setup
@@ -35,6 +36,49 @@ class Items(Base):
     
     id = Column(Integer, primary_key=True)
     vector = Column(Vector(1536))
+
+class ClassificationLog(Base):
+    __tablename__ = "classification_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    source = Column(String, nullable=False, default="Gouge Busters", server_default="Gouge Busters", index=True)
+    input_text = Column(Text, nullable=False)
+    generated_description = Column(Text, nullable=False)
+    predicted_gpc_id = Column(Integer, ForeignKey("gpc_level.id"), nullable=False, index=True)
+    predicted_gpc_code = Column(Integer, nullable=False, index=True)
+    predicted_title = Column(String, nullable=False)
+    predicted_full_title = Column(Text, nullable=False)
+    level_2_category = Column(String)
+    level_3_category = Column(String)
+    definition = Column(Text)
+    active = Column(Boolean)
+    embedding_model = Column(String, nullable=False)
+    description_model = Column(String, nullable=False)
+    prompt_version = Column(String, nullable=False)
+    taxonomy_version = Column(String, nullable=False)
+    similarity_score = Column(Float, nullable=False)
+    top_candidate_count = Column(Integer, nullable=False, default=0, server_default="0")
+
+    candidates = relationship(
+        "ClassificationCandidate",
+        back_populates="classification_log",
+        cascade="all, delete-orphan"
+    )
+
+class ClassificationCandidate(Base):
+    __tablename__ = "classification_candidates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    classification_log_id = Column(Integer, ForeignKey("classification_logs.id"), nullable=False, index=True)
+    rank = Column(Integer, nullable=False)
+    gpc_id = Column(Integer, ForeignKey("gpc_level.id"), nullable=False, index=True)
+    gpc_code = Column(Integer, nullable=False, index=True)
+    title = Column(String, nullable=False)
+    full_title = Column(Text, nullable=False)
+    similarity_score = Column(Float, nullable=False)
+
+    classification_log = relationship("ClassificationLog", back_populates="candidates")
 
 # Database connection details
 DATABASE_URL = os.getenv('DATABASE_URL')

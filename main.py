@@ -3,16 +3,36 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from sqlalchemy import select
-from models import GPCLevel, Items, SessionLocal  # Import your SQLAlchemy models and session
+from models import (
+    Base,
+    GPCLevel,
+    Items,
+    SessionLocal,
+    engine,
+    ClassificationLog,
+    ClassificationCandidate,
+)
 import os
 from dotenv import load_dotenv
 import numpy as np
+import logging
+import time
 
 load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 bearer_scheme = HTTPBearer()
 API_AUTH_TOKEN = os.getenv("API_AUTH_TOKEN")
 assert API_AUTH_TOKEN is not None
+
+EMBEDDING_MODEL = "text-embedding-3-small"
+DESCRIPTION_MODEL = "gpt-4o"
+PROMPT_VERSION = "receipt-description-v2"
+TAXONOMY_VERSION = "GPC_v20240603"
+DEFAULT_SOURCE = "Gouge Busters"
+LOG_CANDIDATE_LIMIT = 5
 
 def validate_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
     if credentials.scheme != "Bearer" or credentials.credentials != API_AUTH_TOKEN:
@@ -20,6 +40,10 @@ def validate_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_sc
     return credentials
 
 app = FastAPI(dependencies=[Depends(validate_token)])
+Base.metadata.create_all(
+    bind=engine,
+    tables=[ClassificationLog.__table__, ClassificationCandidate.__table__]
+)
 
 # Initialize OpenAI API client
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -29,7 +53,7 @@ def create_vector(text: str):
     try:
         response = client.embeddings.create(
             input=text,
-            model="text-embedding-3-small",
+            model=EMBEDDING_MODEL,
             encoding_format="float"
         )
         return np.array(response.data[0].embedding)
@@ -38,7 +62,7 @@ def create_vector(text: str):
 
 def create_description(text):
     response = client.chat.completions.create(
-      model="gpt-4o",
+      model=DESCRIPTION_MODEL,
       messages=[
         {
           "role": "system",
@@ -80,6 +104,70 @@ def create_description(text):
       }
     )
     return response
+
+def similarity_from_distance(distance):
+    if distance is None:
+        return 0.0
+    return float(1 - distance)
+
+def log_classification_event(
+    text: str,
+    description: str,
+    gpc_item,
+    level_2_category: str,
+    level_3_category: str,
+    similarity_score: float,
+    candidate_rows,
+    latency_ms: int,
+    source: str = DEFAULT_SOURCE,
+):
+    log_db = SessionLocal()
+    try:
+        classification_log = ClassificationLog(
+            source=source,
+            input_text=text,
+            generated_description=description,
+            predicted_gpc_id=gpc_item.id,
+            predicted_gpc_code=gpc_item.code,
+            predicted_title=gpc_item.title,
+            predicted_full_title=gpc_item.full_title,
+            level_2_category=level_2_category,
+            level_3_category=level_3_category,
+            definition=gpc_item.definition,
+            active=gpc_item.active,
+            embedding_model=EMBEDDING_MODEL,
+            description_model=DESCRIPTION_MODEL,
+            prompt_version=PROMPT_VERSION,
+            taxonomy_version=TAXONOMY_VERSION,
+            similarity_score=similarity_score,
+            top_candidate_count=len(candidate_rows),
+        )
+        log_db.add(classification_log)
+        log_db.flush()
+
+        for rank, row in enumerate(candidate_rows, start=1):
+            candidate_item = row["gpc_item"]
+            log_db.add(
+                ClassificationCandidate(
+                    classification_log_id=classification_log.id,
+                    rank=rank,
+                    gpc_id=candidate_item.id,
+                    gpc_code=candidate_item.code,
+                    title=candidate_item.title,
+                    full_title=candidate_item.full_title,
+                    similarity_score=row["similarity_score"],
+                )
+            )
+
+        log_db.commit()
+    except Exception:
+        log_db.rollback()
+        logger.exception(
+            "Failed to log classification event",
+            extra={"input_text": text[:200], "latency_ms": latency_ms},
+        )
+    finally:
+        log_db.close()
 
 # Dependency to get a database session
 def get_db():
@@ -136,28 +224,58 @@ def get_level_2_category(gpc_item, db):
 # Endpoint to search for closest vector match and return corresponding GPCLevel row
 @app.post("/search",dependencies=[Depends(validate_token)])
 def search_item(text: str, db: Session = Depends(get_db)):
+    started_at = time.time()
     response = create_description(text)
     description = response.choices[0].message.content.strip()
     vector = create_vector(description)
     
     # Search for the closest vector in the items table
     try:
-        closest_item = db.execute(
-            select(Items).order_by(Items.vector.cosine_distance(vector)).limit(1)
-        ).scalar_one_or_none()
+        distance_expr = Items.vector.cosine_distance(vector).label("distance")
+        candidate_results = db.execute(
+            select(Items, distance_expr).order_by(distance_expr).limit(LOG_CANDIDATE_LIMIT)
+        ).all()
 
-        if closest_item is None:
+        if not candidate_results:
             raise HTTPException(status_code=404, detail="No matching item found")
 
-        gpc_item = db.query(GPCLevel).filter_by(id=closest_item.id).first()
+        gpc_ids = [item.id for item, _ in candidate_results]
+        gpc_items = db.query(GPCLevel).filter(GPCLevel.id.in_(gpc_ids)).all()
+        gpc_items_by_id = {item.id: item for item in gpc_items}
 
-        if gpc_item is None:
+        ranked_candidates = []
+        for item, distance in candidate_results:
+            gpc_item = gpc_items_by_id.get(item.id)
+            if gpc_item is None:
+                continue
+            ranked_candidates.append(
+                {
+                    "item_id": item.id,
+                    "gpc_item": gpc_item,
+                    "similarity_score": similarity_from_distance(distance),
+                }
+            )
+
+        if not ranked_candidates:
             raise HTTPException(status_code=404, detail="GPCLevel item not found")
 
-        # Get the Level 3 category
+        winning_candidate = ranked_candidates[0]
+        gpc_item = winning_candidate["gpc_item"]
+
         level_3_category = get_level_3_category(gpc_item, db)
-        # Get the Level 2 category
         level_2_category = get_level_2_category(gpc_item, db)
+        latency_ms = int((time.time() - started_at) * 1000)
+
+        log_classification_event(
+            text=text,
+            description=description,
+            gpc_item=gpc_item,
+            level_2_category=level_2_category,
+            level_3_category=level_3_category,
+            similarity_score=winning_candidate["similarity_score"],
+            candidate_rows=ranked_candidates,
+            latency_ms=latency_ms,
+        )
 
         return {
             "id": gpc_item.id,
