@@ -1,0 +1,19 @@
+query,expected_category,expected_subcategory,expected_gpc_code
+APPL,Produce,Apples,10005900
+ORG APPL,Produce,Apples,10005900
+GRND BEEF,Meat & Poultry,Beef,
+BNLS CHKN,Meat & Poultry,Chicken,
+CHKN BRST,Meat & Poultry,Chicken,
+WHT BRD,Bakery,Bread,10000165
+FRZ BAGEL,Bakery,Bread,10000163
+TORT,Bakery,Bread,
+PROMISE GLUTEN-FREE TORTILLAS ORIGINAL 168 G,Bakery,Bread,
+GLUTEN FREE HOTDOG BUNS,Bakery,Bread,
+SANDWICH THINS,Bakery,Bread,
+EARL GREY WHITE CHOCOLATE SCONES,Bakery,Bread,
+TEXAS TOAST GARLIC PARMESAN,Bakery,Bread,
+2% MLK,Dairy & Eggs,Milk,
+CHDR CHS,Dairy & Eggs,Cheese,
+YOG,Dairy & Eggs,Yogurt,
+ORG BNNA,Produce,Bananas,
+COKE,Beverages,Soft Drinks,
