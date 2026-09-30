@@ -4,7 +4,8 @@ import csv
 from pathlib import Path
 
 from classifier import GPCClassifier
-from main import create_description, create_vector
+from main import create_description, create_vector, select_candidate
+from sqlalchemy import text
 from models import SessionLocal
 
 
@@ -43,7 +44,8 @@ def main():
     }
 
     try:
-        classifier = GPCClassifier(db, create_description, create_vector)
+        db.execute(text("SET TRANSACTION READ ONLY"))
+        classifier = GPCClassifier(db, create_description, create_vector, select_candidate=select_candidate)
         for row in rows:
             result = classifier.classify(row["query"], include_candidates=args.show_candidates)
             category_match = matches(row.get("expected_category"), result.get("category"))

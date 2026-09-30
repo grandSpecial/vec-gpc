@@ -34,17 +34,18 @@ Global Product Classification (GPC) is the foundation of standardized product ca
 ### Example:
 ```json
 {
-  "text": "Organic apple juice 1L carton"
+  "text": "Banana"
 }
 ```
-**Response**:
+**Response** (selected fields):
 ```json
 {
-  "id": 1,
-  "code": "10000004",
-  "title": "Beverages",
-  "full_title": "Food & Beverage > Non-Alcoholic Beverages > Juice > Apple Juice",
-  "definition": "Juices from fresh apples...",
+  "code": 10005897,
+  "title": "Bananas",
+  "level_2_category": "Produce",
+  "level_3_category": "Bananas",
+  "category": "Produce",
+  "subcategory": "Bananas",
   "active": true
 }
 ```
@@ -58,3 +59,89 @@ Global Product Classification (GPC) is the foundation of standardized product ca
 - **Free Tier**: Ideal for testing and small-scale classification.
 - **Pro Tier**: For businesses with larger classification needs and higher volume.
 - **Enterprise Tier**: Fully customizable pricing for large-scale deployments.
+## Compatibility and classification pipeline
+
+The existing Gouge Busters integration remains supported: authenticated
+`POST /search?text=...` returns a JSON object containing the string
+`level_2_category`. The optional JSON body `{"text":"..."}` is also accepted;
+a query parameter takes precedence. Existing response fields, GPC IDs/codes,
+and the familiar category overrides (Produce, Bakery, Pantry, Dairy & Eggs,
+Meat & Poultry, Beverages, Snacks & Candy, Prepared Foods) are retained.
+Missing mappings now use canonical taxonomy ancestry and the existing database
+level-2 category labels, such as Skin Care and Pet Food & Drinks.
+
+The API embeds normalized receipt text alongside an optional short retrieval hint,
+retrieves active level-4 product bricks,
+adds candidates from exact taxonomy product-type aliases, and asks the model to
+choose only among those candidates. Shared ingredients/attributes are no longer
+promoted to arbitrary parent products. The original receipt always remains in the embedding. Final selection sees the
+original receipt, not the retrieval hint as ground truth, and returns a short
+description for compatibility.
+Retrieval-hint failure falls back to the original text. Model selection failure falls back to deterministic ranking with `needs_review=true`.
+Embedding service failures return a generic 502/504 rather than internal details.
+
+`confidence` is a conservative ranking signal, **not a calibrated probability**.
+Closely competing candidates, missing alternatives, and uncertain model selections
+require review. The existing Gouge Busters consumer reads only `level_2_category`;
+it does not currently act on `needs_review`. Ambiguous receipt lines and fees still
+receive a best candidate to preserve that contract and should not be interpreted
+as verified product identifications.
+
+Retrieval hints have a 1.5-second timeout, embeddings 2 seconds, and selection
+3 seconds, with no automatic retries in the request path. Embeddings and valid selections have bounded, process-local caches.
+Database connections are checked before reuse, with bounded pool/connection waits
+and statement timeouts. These are individual operation limits, not a guaranteed
+end-to-end SLA; the consumer's existing 10-second timeout still applies.
+`classification_result` and `classification_failed` structured log events provide
+request IDs, selection/fallback status, model/prompt/ranking versions, latency,
+and candidate decisions without requiring a database migration.
+
+## Validation and rollout
+
+Run offline regression and consumer contract tests:
+
+```sh
+python -m unittest discover -s tests -v
+```
+
+`tests/fixtures/gouge_busters_category_client.py` preserves the actual consumer
+helper from Gouge-Busters/gouge-busters-api commit
+`3ccc841ab17913d362db5ead9fc914e454d4c964`. Its query-string call is tested against
+this application's ASGI endpoint. No consumer changes are required.
+
+The model defaults to the pinned `gpt-4.1-mini-2025-04-14` snapshot and can be
+configured with `CLASSIFICATION_MODEL`. It supports the existing Chat Completions
+API and structured output schema ([OpenAI model documentation](https://developers.openai.com/api/docs/models/gpt-4.1-mini)).
+Model changes must be evaluated on both the regression and holdout sets.
+
+Run the expanded labeled evaluation against the configured database (read-only;
+calls the embedding and selection APIs, so it incurs API usage):
+
+```sh
+python evaluate_classifier.py --show-candidates
+python evaluate_classifier.py --gold-set evaluation/holdout_receipt_queries.csv
+```
+
+Audit the active product embeddings without making changes:
+
+```sh
+python refresh_embeddings.py
+```
+
+A separate, explicit maintenance operation refreshes only active product-brick
+vectors and their version markers, preserving all GPC rows and category names:
+
+```sh
+python refresh_embeddings.py --apply
+```
+
+Refresh markers include a hash of embedding content and model, so interrupted
+runs can resume and changed definitions cannot silently retain old vectors.
+Each batch commits vectors and markers together. The application works with
+existing vectors; refreshing is not a schema prerequisite. Evaluate before and
+after any refresh, and back up vectors/markers before changing a production index:
+rolling back application code alone does not restore changed embeddings.
+Deploy the code separately from any embedding refresh so failures are attributable.
+No production writes or deployments are performed by the test suite.
+
+Validation results and limits are recorded in [evaluation/validation_20260930.json](evaluation/validation_20260930.json).

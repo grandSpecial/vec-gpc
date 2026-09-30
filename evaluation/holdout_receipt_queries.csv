@@ -1,0 +1,13 @@
+query,expected_category,expected_subcategory,expected_gpc_code
+Blueberries,Produce,,
+Whole milk 2 L,Dairy & Eggs,Milk,
+Skinless chicken thighs,Meat & Poultry,Chicken,
+Atlantic salmon fillet,Seafood,,
+Liquid dish soap,Cleaning Supplies,,
+Toilet paper 12 rolls,Toiletries,,
+Laundry detergent,Cleaning Supplies,,
+Free range eggs,Dairy & Eggs,Eggs,
+Salted butter,Dairy & Eggs,,
+Extra virgin olive oil,Cooking Oils,,
+Dog biscuits,Pet Food & Drinks,,
+Plain Greek yogurt,Dairy & Eggs,Yogurt,

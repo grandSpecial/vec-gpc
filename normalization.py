@@ -2,7 +2,7 @@ import re
 from dataclasses import dataclass
 
 
-NORMALIZATION_VERSION = "receipt-normalization-v1"
+NORMALIZATION_VERSION = "receipt-normalization-v2"
 
 PHRASE_EXPANSIONS = {
     "GRND BEEF": "ground beef",
@@ -15,7 +15,8 @@ PHRASE_EXPANSIONS = {
     "WHL WHT BRD": "whole wheat bread",
     "ORG APPL": "organic apple",
     "ORG BNNA": "organic banana",
-    "2% MLK": "milk",
+    "2% MLK": "2% milk",
+    "SANDWICH THINS": "thin sandwich bread",
 }
 
 TOKEN_EXPANSIONS = {
@@ -24,14 +25,12 @@ TOKEN_EXPANSIONS = {
     "APPLE": "apple",
     "BNNA": "banana",
     "BANA": "banana",
-    "BAN": "banana",
     "ORG": "organic",
     "GRND": "ground",
     "GND": "ground",
     "BEEF": "beef",
     "CHKN": "chicken",
     "CHK": "chicken",
-    "CHICK": "chicken",
     "BRST": "breast",
     "BNLS": "boneless",
     "SKNLS": "skinless",
@@ -55,7 +54,6 @@ TOKEN_EXPANSIONS = {
     "SCNE": "bread scone",
     "SCONE": "bread scone",
     "SCONES": "bread scone",
-    "THINS": "bread thins",
     "TOAST": "bread toast",
     "LOAF": "bread loaf",
     "BAGUETTES": "baguette",
@@ -63,9 +61,6 @@ TOKEN_EXPANSIONS = {
     "CHDR": "cheddar",
     "CHED": "cheddar",
     "MLK": "milk",
-    "2%": "",
-    "1%": "",
-    "0%": "",
     "YOG": "yogurt",
     "YOGT": "yogurt",
     "YOGURT": "yogurt",
@@ -82,11 +77,8 @@ TOKEN_EXPANSIONS = {
     "FRZN": "frozen",
     "RFG": "refrigerated",
     "REFRIG": "refrigerated",
-    "TOM": "tomato",
     "TOMS": "tomatoes",
-    "POT": "potato",
     "POTS": "potatoes",
-    "CAR": "carrot",
     "LETT": "lettuce",
     "SPIN": "spinach",
     "AVO": "avocado",
@@ -95,8 +87,6 @@ TOKEN_EXPANSIONS = {
     "BLUB": "blueberry",
     "BLUEB": "blueberry",
     "COKE": "cola soft drink",
-    "POP": "soft drink",
-    "SODA": "soft drink",
     "WTR": "water",
     "JCE": "juice",
     "OJ": "orange juice",
@@ -104,7 +94,7 @@ TOKEN_EXPANSIONS = {
     "TEA": "tea",
 }
 
-TOKEN_PATTERN = re.compile(r"[A-Za-z0-9%]+")
+TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+(?:\.[0-9]+)?%?")
 SPACE_PATTERN = re.compile(r"\s+")
 
 
@@ -125,27 +115,25 @@ def normalize_receipt_text(text: str) -> NormalizedQuery:
     compact_input = _normalize_spacing(raw_text)
     upper_text = compact_input.upper()
 
-    phrase_expansion = PHRASE_EXPANSIONS.get(upper_text)
-    if phrase_expansion:
-        return NormalizedQuery(
-            input_text=raw_text,
-            normalized_text=phrase_expansion,
-            expansions=[{"from": compact_input, "to": phrase_expansion, "type": "phrase"}],
-        )
-
-    tokens = TOKEN_PATTERN.findall(upper_text)
-    expanded_tokens = []
     expansions = []
-    for token in tokens:
+    # Longest phrases first; work within longer receipt lines too (e.g. sizes).
+    for phrase, replacement in sorted(PHRASE_EXPANSIONS.items(), key=lambda p: -len(p[0])):
+        pattern = r"(?<!\w)" + re.escape(phrase) + r"(?!\w)"
+        if re.search(pattern, upper_text):
+            upper_text = re.sub(pattern, replacement, upper_text)
+            expansions.append({"from": phrase, "to": replacement, "type": "phrase"})
+
+    def expand_token(match):
+        token = match.group()
+        # Lowercase spans were already expanded as phrases.
+        if token != token.upper():
+            return token
         expanded = TOKEN_EXPANSIONS.get(token, token.lower())
-        if not expanded:
-            expansions.append({"from": token, "to": "", "type": "drop"})
-            continue
-        expanded_tokens.append(expanded)
         if expanded != token.lower():
             expansions.append({"from": token, "to": expanded, "type": "token"})
+        return expanded
 
-    normalized_text = _normalize_spacing(" ".join(expanded_tokens) or compact_input.lower())
+    normalized_text = _normalize_spacing(TOKEN_PATTERN.sub(expand_token, upper_text).lower())
     return NormalizedQuery(
         input_text=raw_text,
         normalized_text=normalized_text,

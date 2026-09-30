@@ -1,8 +1,9 @@
 import re
 from dataclasses import dataclass
+from taxonomy import BRICK_PATHS
 
 
-DISPLAY_MAPPING_VERSION = "display-mapping-v1"
+DISPLAY_MAPPING_VERSION = "display-mapping-v2"
 
 STATE_SUFFIX_PATTERN = re.compile(
     r"\s*\((Frozen|Shelf Stable|Perishable|Chilled|Refrigerated)\)\s*$",
@@ -128,14 +129,15 @@ def clean_gpc_title(title: str | None) -> str:
     return cleaned or title
 
 
-def display_labels_for_gpc(gpc_item) -> DisplayLabels:
-    path = split_gpc_path(gpc_item.full_title)
+def display_labels_for_gpc(gpc_item, ancestor_categories=None) -> DisplayLabels:
+    path = BRICK_PATHS.get(getattr(gpc_item, "code", None)) or split_gpc_path(gpc_item.full_title)
     level2_title = path[1] if len(path) > 1 else None
     level3_title = path[2] if len(path) > 2 else None
     cleaned_title = clean_gpc_title(gpc_item.title)
 
     category = (
         LEVEL2_CATEGORY_OVERRIDES.get(level2_title or "")
+        or (ancestor_categories or {}).get(level2_title)
         or getattr(gpc_item, "level_2_category", None)
         or level2_title
         or "Unclassified"
