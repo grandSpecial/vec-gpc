@@ -223,7 +223,6 @@ def search_item(
             raise HTTPException(status_code=422, detail="text must not be empty")
         classifier = GPCClassifier(db, create_description, create_vector, select_candidate=select_candidate)
         result = classifier.classify(text, include_candidates=include_candidates)
-        gpc_item = result["log_candidates"][0].gpc_item
         # Return the search connection before acquiring the logging connection.
         db.close()
 
@@ -241,19 +240,22 @@ def search_item(
             "reranker_version": result["reranker_version"],
             "prompt_version": PROMPT_VERSION,
             "normalization_version": result["normalization"]["version"],
-            "candidates": [candidate_to_debug(row, classifier.ancestor_categories) for row in result["log_candidates"]],
+            "candidates": [candidate_to_debug(row, classifier.ancestor_categories, result["normalized_text"]) for row in result["log_candidates"]],
         }))
 
-        log_classification_event(
-            text=text,
-            description=result["description"],
-            gpc_item=gpc_item,
-            level_2_category=result["category"],
-            level_3_category=result["subcategory"],
-            similarity_score=result["log_candidates"][0].similarity_score,
-            candidate_rows=result["log_candidates"],
-            latency_ms=result["latency_ms"],
-        )
+        # The relational classification log requires a real GPC product. Receipt
+        # charges are recorded by the structured event above, without fake IDs.
+        if result["log_candidates"]:
+            log_classification_event(
+                text=text,
+                description=result["description"],
+                gpc_item=result["log_candidates"][0].gpc_item,
+                level_2_category=result["category"],
+                level_3_category=result["subcategory"],
+                similarity_score=result["log_candidates"][0].similarity_score,
+                candidate_rows=result["log_candidates"],
+                latency_ms=result["latency_ms"],
+            )
 
         result.pop("log_candidates", None)
         return result

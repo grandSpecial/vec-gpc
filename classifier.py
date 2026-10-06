@@ -11,12 +11,14 @@ from display_mapping import display_labels_for_gpc
 from models import GPCLevel, Items
 from normalization import NormalizedQuery, normalize_receipt_text
 from taxonomy import CROP_CODES, PET_CODES, product_type_codes
+from product_identity import FAMILIES, IDENTITY_RULE_VERSION, explicit_product_family
+from receipt_charges import receipt_charge_result
 
 
 FINAL_GPC_LEVEL = 4
 LOG_CANDIDATE_LIMIT = 5
 SEARCH_CANDIDATE_LIMIT = 35
-RERANKER_VERSION = "gpc-reranker-v2"
+RERANKER_VERSION = "gpc-reranker-v3"
 logger = logging.getLogger(__name__)
 CONFIDENCE_HIGH_THRESHOLD = 0.42
 CONFIDENCE_LOW_THRESHOLD = 0.30
@@ -165,8 +167,8 @@ def status_from_confidence(confidence: float):
     return "uncertain", True
 
 
-def candidate_to_debug(row: ClassificationCandidateRow, ancestor_categories=None):
-    labels = display_labels_for_gpc(row.gpc_item, ancestor_categories)
+def candidate_to_debug(row: ClassificationCandidateRow, ancestor_categories=None, receipt_text=""):
+    labels = display_labels_for_gpc(row.gpc_item, ancestor_categories, receipt_text)
     return {
         "gpc_id": row.gpc_item.id,
         "gpc_code": row.gpc_item.code,
@@ -206,6 +208,11 @@ class GPCClassifier:
         normalized_query = normalize_receipt_text(text)
         if not normalized_query.normalized_text.strip():
             raise HTTPException(status_code=422, detail="text must not be empty")
+        charge = receipt_charge_result(normalized_query, include_candidates)
+        if charge is not None:
+            charge.update(reranker_version=RERANKER_VERSION, identity_rule_version=IDENTITY_RULE_VERSION,
+                          latency_ms=int((time.monotonic() - started_at) * 1000))
+            return charge
         description = normalized_query.normalized_text
         description_fallback = False
         if self.create_description is not None:
@@ -264,7 +271,7 @@ class GPCClassifier:
             select(GPCLevel.title, GPCLevel.level_2_category)
             .where(GPCLevel.level == 2, GPCLevel.level_2_category.isnot(None))
         ).all())
-        display_labels = display_labels_for_gpc(gpc_item, self.ancestor_categories)
+        display_labels = display_labels_for_gpc(gpc_item, self.ancestor_categories, normalized_query.normalized_text)
         confidence = confidence_from_ranked_candidates(ranked_candidates)
         if selection_needs_review:
             confidence = min(confidence, CONFIDENCE_HIGH_THRESHOLD - 0.01)
@@ -299,13 +306,15 @@ class GPCClassifier:
             "display_mapping_version": display_labels.version,
             "display_mapping_source": display_labels.source,
             "reranker_version": RERANKER_VERSION,
+            "identity_rule_version": IDENTITY_RULE_VERSION,
+            "identity_rule": explicit_product_family(normalized_query.normalized_text),
             "latency_ms": int((time.monotonic() - started_at) * 1000),
             "log_candidates": ranked_candidates[: self.log_candidate_limit],
         }
 
         if include_candidates:
             response["candidates"] = [
-                candidate_to_debug(candidate, self.ancestor_categories)
+                candidate_to_debug(candidate, self.ancestor_categories, normalized_query.normalized_text)
                 for candidate in ranked_candidates[: self.log_candidate_limit]
             ]
 
@@ -319,6 +328,12 @@ class GPCClassifier:
             .where(GPCLevel.level == FINAL_GPC_LEVEL, GPCLevel.active.is_(True), Items.vector.isnot(None))
         )
         terms = word_terms(normalized_query.normalized_text)
+        family = explicit_product_family(normalized_query.normalized_text)
+        if family:
+            # Restrict retrieval itself, so a bad retrieval hint cannot crowd
+            # out the known product family. Selection and fallback both inherit
+            # the constraint. Explicit special-use/accessory names abstain.
+            statement = statement.where(GPCLevel.code.in_(FAMILIES[family]))
         # Retail produce is not the crop used to grow it. Explicit growing inputs
         # retain access to agricultural categories; houseplants remain available.
         if not terms & {"seedling", "seedlings", "plant", "plants", "shrub", "shrubs", "tree", "trees", "growing"}:
@@ -357,6 +372,8 @@ class GPCClassifier:
                 similarity_score,
                 normalized_query,
             )
+            if family:
+                reasons.append(f"explicit_product_family:{family}")
             candidate = ClassificationCandidateRow(
                 item_id=final_gpc_item.id,
                 gpc_item=final_gpc_item,

@@ -58,6 +58,21 @@ class ApiTests(unittest.TestCase):
         self.client.post('/search',params={'text':'Banana'},json={'text':'Apple'},headers=self.headers)
         self.assertEqual(self.classify.call_args.args[0],'Banana')
 
+    def test_deposit_response_does_not_require_gpc_or_product_log(self):
+        from receipt_charges import receipt_charge_result
+        from normalization import normalize_receipt_text
+        data = receipt_charge_result(normalize_receipt_text('Bottle deposit'), True)
+        data.update(reranker_version='test', latency_ms=0)
+        self.classify.side_effect = lambda *a, **k: data.copy()
+        response = self.client.post('/search', params={'text':'Bottle deposit'}, headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['level_2_category'], 'Deposits & Fees')
+        self.assertEqual(response.json()['status'], 'non_product')
+        self.assertIsNone(response.json()['code'])
+        self.assertNotIn('log_candidates', response.json())
+        self.log.assert_not_called()
+        self.db.close.assert_called_once()
+
     def test_input_validation_and_auth(self):
         for params in [{},{'text':''},{'text':'   '},{'text':'x'*2049}]:
             self.assertEqual(self.client.post('/search',params=params,headers=self.headers).status_code,422)

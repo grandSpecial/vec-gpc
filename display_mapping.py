@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from taxonomy import BRICK_PATHS
 
 
-DISPLAY_MAPPING_VERSION = "display-mapping-v2"
+DISPLAY_MAPPING_VERSION = "display-mapping-v3"
 
 STATE_SUFFIX_PATTERN = re.compile(
     r"\s*\((Frozen|Shelf Stable|Perishable|Chilled|Refrigerated)\)\s*$",
@@ -129,7 +129,7 @@ def clean_gpc_title(title: str | None) -> str:
     return cleaned or title
 
 
-def display_labels_for_gpc(gpc_item, ancestor_categories=None) -> DisplayLabels:
+def display_labels_for_gpc(gpc_item, ancestor_categories=None, receipt_text="") -> DisplayLabels:
     path = BRICK_PATHS.get(getattr(gpc_item, "code", None)) or split_gpc_path(gpc_item.full_title)
     level2_title = path[1] if len(path) > 1 else None
     level3_title = path[2] if len(path) > 2 else None
@@ -147,6 +147,22 @@ def display_labels_for_gpc(gpc_item, ancestor_categories=None) -> DisplayLabels:
         or LEVEL3_SUBCATEGORY_OVERRIDES.get(level3_title or "")
         or cleaned_title
     )
+
+    # Customer-facing grouping is separate from canonical GPC ancestry. Apply
+    # receipt-specific refinements only to compatible bricks, never to disguise
+    # a non-food selection as food. Preserve brick IDs, titles and definitions.
+    if level3_title == "Snacks":
+        category = "Snacks & Candy"
+    if getattr(gpc_item, "code", None) in {10000244, 10000272, 10000006}:
+        category = "Pantry"
+    if re.search(r"\b(?:bread\s*crumbs?|breadcrumbs?)\b", receipt_text, re.IGNORECASE) and (
+        cleaned_title in {"Baking/Cooking Supplies", "Dried Breads"}
+    ):
+        category, subcategory = "Pantry", "Bread Crumbs"
+    elif re.search(r"\bcrackers?\b", receipt_text, re.IGNORECASE) and (
+        cleaned_title in {"Dried Breads", "Biscuits/Cookies"}
+    ):
+        category, subcategory = "Snacks & Candy", "Crackers"
 
     if subcategory == category and cleaned_title != category:
         subcategory = cleaned_title

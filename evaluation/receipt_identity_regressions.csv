@@ -1,0 +1,7 @@
+query,expected_category,expected_subcategory,expected_gpc_code
+Chocolate chip muffins,Bakery,Desserts & Pastries,
+GSPP roasted pepper pizza,Bakery,Savory Baked Goods,
+"PC Blue Menu sparkling water, orange",Beverages,,10008410
+Banana chocolate chunk muffin,Bakery,Desserts & Pastries,
+GSPP roasted crust four cheese pizza,Bakery,Savory Baked Goods,
+PC sparkling water,Beverages,,

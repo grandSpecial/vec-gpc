@@ -1,0 +1,238 @@
+{
+  "date": "2026-10-06",
+  "deployment": "local working tree; not deployed",
+  "reranker_version": "gpc-reranker-v3",
+  "identity_rule_version": "receipt-identity-v1",
+  "offline_tests": {
+    "passed": 37,
+    "command": "venv/bin/python -m unittest discover -s tests -q"
+  },
+  "targeted_evaluation": {
+    "command": "venv/bin/python evaluate_classifier.py --gold-set evaluation/receipt_identity_regressions.csv --show-candidates",
+    "database_access": "read-only transaction; real embedding and selection API calls",
+    "category": {
+      "correct": 6,
+      "labeled": 6
+    },
+    "subcategory": {
+      "correct": 4,
+      "labeled": 4
+    },
+    "gpc_code": {
+      "correct": 1,
+      "labeled": 1
+    },
+    "results": [
+      {
+        "query": "Chocolate chip muffins",
+        "category": "Bakery",
+        "subcategory": "Desserts & Pastries",
+        "code": 10000171,
+        "confidence": 0.3835,
+        "needs_review": true
+      },
+      {
+        "query": "GSPP roasted pepper pizza",
+        "category": "Bakery",
+        "subcategory": "Savory Baked Goods",
+        "code": 10000249,
+        "confidence": 0.3932,
+        "needs_review": true
+      },
+      {
+        "query": "PC Blue Menu sparkling water, orange",
+        "category": "Beverages",
+        "subcategory": "Soft Drinks",
+        "code": 10008410,
+        "confidence": 0.41,
+        "needs_review": true
+      },
+      {
+        "query": "Banana chocolate chunk muffin",
+        "category": "Bakery",
+        "subcategory": "Desserts & Pastries",
+        "code": 10000171,
+        "confidence": 0.363,
+        "needs_review": true
+      },
+      {
+        "query": "GSPP roasted crust four cheese pizza",
+        "category": "Bakery",
+        "subcategory": "Savory Baked Goods",
+        "code": 10000250,
+        "confidence": 0.3804,
+        "needs_review": true
+      },
+      {
+        "query": "PC sparkling water",
+        "category": "Beverages",
+        "subcategory": "Soft Drinks",
+        "code": 10008410,
+        "confidence": 0.41,
+        "needs_review": true
+      }
+    ]
+  },
+  "live_baseline_reproduction": [
+    {
+      "query": "Chocolate chip muffins",
+      "category": "Tobacco & Cannabis",
+      "code": 10008078,
+      "selection_source": "model",
+      "needs_review": true
+    },
+    {
+      "query": "GSPP roasted pepper pizza",
+      "category": "Small Appliances",
+      "code": 10001985,
+      "selection_source": "model",
+      "needs_review": true
+    },
+    {
+      "query": "PC Blue Menu sparkling water, orange",
+      "category": "Fresh Garnishes",
+      "code": 10008041,
+      "selection_source": "model",
+      "needs_review": true
+    }
+  ],
+  "limits": [
+    "This is a targeted development-set check, not an overall accuracy estimate or a new holdout evaluation.",
+    "Storage variants remain uncertain. Four-cheese pizza selected shelf stable, which was not stated.",
+    "Generic PC sparkling water selected flavoured, which was not stated. Its exact code was not scored.",
+    "The existing 31-row gold set has one rule-matching row (Chocolate chip muffins), included in this targeted evaluation. No rows in the existing 12-row holdout match these narrow rules; neither full live set was rerun.",
+    "One description request timed out and used the existing fallback.",
+    "Italian bread crumbs selected a Frozen GPC brick without explicit storage information. Broad category passed; exact brick was not scored.",
+    "Non-product deposit responses have null GPC IDs and confidence. Category-only consumer contract and API logging behavior are covered by offline tests.",
+    "Deposit display policy is confirmed separately. Final horseradish/MSV corrections are still absent from the local CSV; expected categories for those two have not been invented."
+  ],
+  "display_mapping_version": "display-mapping-v3",
+  "display_evaluation": {
+    "command": "venv/bin/python -u evaluate_classifier.py --gold-set evaluation/receipt_display_regressions.csv --show-candidates",
+    "database_access": "read-only; real embedding/selection calls for eight product lines, deterministic bypass for the deposit",
+    "category": {
+      "correct": 9,
+      "labeled": 9
+    },
+    "subcategory": {
+      "correct": 3,
+      "labeled": 3
+    },
+    "gpc_code": {
+      "correct": 5,
+      "labeled": 5
+    },
+    "results": [
+      {
+        "query": "Multigrain crackers",
+        "category": "Snacks & Candy",
+        "subcategory": "Crackers",
+        "code": 10000166,
+        "title": "Dried Breads (Shelf Stable)",
+        "confidence": 0.364,
+        "status": "classified"
+      },
+      {
+        "query": "Que Pasa taco tortilla chips",
+        "category": "Snacks & Candy",
+        "subcategory": "Chips/Crisps/Snack Mixes",
+        "code": 10000177,
+        "title": "Chips/Crisps/Snack Mixes - Natural/Extruded (Shelf Stable)",
+        "confidence": 0.41,
+        "status": "classified"
+      },
+      {
+        "query": "Que Pasa nacho tortilla chips",
+        "category": "Snacks & Candy",
+        "subcategory": "Chips/Crisps/Snack Mixes",
+        "code": 10000177,
+        "title": "Chips/Crisps/Snack Mixes - Natural/Extruded (Shelf Stable)",
+        "confidence": 0.41,
+        "status": "classified"
+      },
+      {
+        "query": "Italian bread crumbs",
+        "category": "Pantry",
+        "subcategory": "Bread Crumbs",
+        "code": 10000157,
+        "title": "Baking/Cooking Supplies (Frozen)",
+        "confidence": 0.41,
+        "status": "classified"
+      },
+      {
+        "query": "Hot pepper rings",
+        "category": "Pantry",
+        "subcategory": "Pickled Vegetables",
+        "code": 10000244,
+        "title": "Pickled Vegetables",
+        "confidence": 0.3372,
+        "status": "classified"
+      },
+      {
+        "query": "Nova Scotia beverage container deposit",
+        "category": "Deposits & Fees",
+        "subcategory": "Container Deposits",
+        "code": null,
+        "title": "Container deposit",
+        "confidence": null,
+        "status": "non_product"
+      },
+      {
+        "query": "PC kettle chips",
+        "category": "Snacks & Candy",
+        "subcategory": "Chips/Crisps/Snack Mixes",
+        "code": 10000177,
+        "title": "Chips/Crisps/Snack Mixes - Natural/Extruded (Shelf Stable)",
+        "confidence": 0.41,
+        "status": "classified"
+      },
+      {
+        "query": "PC sour cream chips",
+        "category": "Snacks & Candy",
+        "subcategory": "Chips/Crisps/Snack Mixes",
+        "code": 10000177,
+        "title": "Chips/Crisps/Snack Mixes - Natural/Extruded (Shelf Stable)",
+        "confidence": 0.41,
+        "status": "classified"
+      },
+      {
+        "query": "Strub kosher pickles",
+        "category": "Pantry",
+        "subcategory": "Pickled Vegetables",
+        "code": 10000244,
+        "title": "Pickled Vegetables",
+        "confidence": 0.41,
+        "status": "classified"
+      }
+    ]
+  },
+  "manual_test_2": {
+    "source": "evaluation/manual_receipt_results_test2_20261006.csv",
+    "items": 100,
+    "accepted": 83,
+    "rejected": 3,
+    "unknown": 14,
+    "rejected_items": [
+      {
+        "query": "T-Rex",
+        "category": "Live Animals"
+      },
+      {
+        "query": "GSPP roasted crust four cheese pizza",
+        "category": "Bakery"
+      },
+      {
+        "query": "GSPP roasted pepper pizza",
+        "category": "Bakery"
+      }
+    ],
+    "notes": [
+      "User supplied these labels after testing the local version through Colab.",
+      "Category-only export: exact GPC codes, confidence and version fields were not captured.",
+      "Both pizzas are now marked FALSE for Bakery, superseding acceptance of this display category in the earlier development fixtures. These fixtures preserve the policy used for that earlier check; pizza display policy remains open.",
+      "Multigrain crackers returned Pantry and was accepted; this differs from the earlier targeted Snacks & Candy result. The selected brick cannot be determined from this export.",
+      "Accepted counts describe this development batch, not independent holdout accuracy. Manual judgments also changed between runs.",
+      "Extra hot horseradish is now UNKNOWN (could be bottled or the root). MSV cheddar jalapeno should be read directly from this newer source."
+    ]
+  }
+}
